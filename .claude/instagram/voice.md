@@ -7,7 +7,7 @@ marked *(inferred)* are guesses from those three reels. Correct them.
 
 ## Who I am
 
-- **Name:** {{your name}}
+- **Name:** Coach Nagi
 - **Handle:** {{your handle}}
 - **What I do, in one sentence:** I bust gym and fat-loss myths in Egyptian
   Arabic and replace them with the boring thing that actually works: eat right,

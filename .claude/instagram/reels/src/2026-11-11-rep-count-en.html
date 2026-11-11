@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="700.css">
+<link rel="stylesheet" href="900.css">
+<style>
+  :root { --bg:#0d0f13; --ink:#ffffff; --dim:#8a8f98; --lime:#c6ff3d; --red:#ff4d4d; --card:#1a1d24; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { width:1080px; height:1920px; overflow:hidden; background:var(--bg); font-family:'Cairo', sans-serif; color:var(--ink); }
+  #bgglow { position:absolute; inset:0; }
+  /* Safe zone: y 230..1440, keep right 230px clear -> content box x 60..850 */
+  #safe { position:absolute; left:60px; top:230px; width:790px; height:1210px; }
+  #visual { position:absolute; left:0; top:60px; width:790px; height:640px; display:flex; align-items:center; justify-content:center; }
+  #caption { position:absolute; left:0; top:760px; width:790px; height:330px; display:flex; flex-wrap:wrap; align-content:center; justify-content:center; gap:4px 18px; text-align:center; font-weight:900; font-size:76px; line-height:1.25; }
+  .w { display:inline-block; }
+  .hl { color:var(--lime); }
+  #progress { position:absolute; left:60px; top:240px; width:790px; height:8px; border-radius:4px; background:#232733; overflow:hidden; }
+  #progress > div { position:absolute; right:0; top:0; height:100%; background:var(--lime); }
+  #brand { position:absolute; left:60px; top:1370px; width:790px; text-align:center; font-weight:700; font-size:30px; letter-spacing:6px; color:var(--dim); direction:ltr; }
+  .big { font-weight:900; direction:ltr; line-height:1; }
+  .lbl { font-weight:700; color:var(--dim); font-size:44px; }
+  .dot { width:46px; height:46px; border-radius:50%; border:5px solid #3a3f4b; display:inline-block; }
+  .chip { font-weight:900; font-size:110px; width:170px; height:170px; border-radius:36px; background:var(--card); display:flex; align-items:center; justify-content:center; direction:ltr; }
+</style>
+</head>
+<body>
+<div id="bgglow"></div>
+<div id="progress"><div id="pbar"></div></div>
+<div id="safe">
+  <div id="visual"></div>
+  <div id="caption"></div>
+</div>
+<div id="brand">COACH NAGI</div>
+<script>
+const BEATS = [["You don't need 8–12 reps.", ["8–12"], 0.15, 1.574], ["We all learned that's the muscle range.", ["muscle", "range."], 1.974, 1.677], ["But research says 6 to 30 reps all build muscle.", ["6", "30", "muscle."], 3.902, 3.888], ["On one condition.", ["one"], 8.189, 0.74], ["Push the set until you've got 1 or 2 reps left.", ["1", "2"], 9.33, 2.329], ["Stop at 12 when you could do 20?", ["12", "20?"], 11.959, 1.956], ["That's not a set. That's a warm-up.", ["warm-up."], 14.115, 1.947], ["It's not the number.", ["number."], 16.462, 1.012], ["It's the last 2 reps.", ["last", "2"], 17.623, 1.078], ["So pick the range you like.", ["like."], 19.102, 1.402], ["6, 10, 15, 20.", [], 20.703, 1.547], ["You don't need 8–12 reps.", ["8–12"], 22.701, 1.574], ["The last 2 reps need to be tough.", ["tough."], 24.475, 1.708]];
+const T = BEATS.map(([s,h,st,d]) => ({s, h, start:st, dur:d, n:s.split(/\s+/).length}));
+const TOTAL = 26.783;
+window.TOTAL = TOTAL;
+const NS = i => T[i].start;
+const OLD = [NS(0), NS(1), NS(2), NS(2)+0.35*T[2].dur, NS(2)+0.72*T[2].dur, NS(3), NS(4), NS(5), NS(6), NS(7), NS(8), NS(9), NS(10), NS(11), NS(12)];
+const ODUR = {3: 0.37*T[2].dur, 6: T[4].dur, 12: T[10].dur};
+
+const clamp = (x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const ease = x => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const back = x => { x = clamp(x); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3*Math.pow(x-1,3) + c1*Math.pow(x-1,2); };
+const pop = (lt, at=0, d=0.35) => { const p = back((lt-at)/d); return `opacity:${clamp((lt-at)/0.12)};transform:scale(${0.6+0.4*p});`; };
+const rise = (lt, at=0, d=0.35) => { const p = ease((lt-at)/d); return `opacity:${p};transform:translateY(${(1-p)*40}px);`; };
+
+function caption(i, t) {
+  const b = T[i], lt = t - b.start, per = (b.dur * 0.8) / b.n;
+  return b.s.split(/\s+/).map((w, k) => {
+    const p = back((lt - k*per) / 0.25), o = clamp((lt - k*per) / 0.1);
+    return `<span class="w ${b.h.includes(w) ? 'hl' : ''}" style="opacity:${o};transform:translateY(${(1-p)*30}px) scale(${0.85+0.15*p})">${w}</span>`;
+  }).join(' ');
+}
+const S = i => OLD[i];
+
+function dots(n, filled, redFrom, lt, glowT) {
+  let h = '';
+  for (let k = 0; k < n; k++) {
+    let st = '';
+    if (k < filled) st = 'background:var(--lime);border-color:var(--lime);';
+    if (redFrom != null && k >= redFrom) {
+      const pulse = 1 + 0.12*Math.sin(glowT*10);
+      st = `background:var(--red);border-color:var(--red);box-shadow:0 0 30px var(--red);transform:scale(${pulse});`;
+    }
+    h += `<span class="dot" style="${st}"></span>`;
+  }
+  return `<div style="display:flex;gap:16px;direction:ltr;justify-content:center;width:790px">${h}</div>`;
+}
+
+function strike812(lt, label) {
+  const sp = ease((lt-0.35)/0.45);
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:20px;${pop(lt)}">
+    ${label}
+    <div style="position:relative">
+      <div class="big" style="font-size:300px">8–12</div>
+      <div style="position:absolute;left:-20px;top:46%;height:26px;width:${sp*110}%;background:var(--red);border-radius:13px;transform:rotate(-8deg);box-shadow:0 0 40px rgba(255,77,77,.6)"></div>
+    </div>
+    <div class="lbl">reps</div></div>`;
+}
+
+function visual(t) {
+  // Scene A: hook + "rep range of hypertrophy"
+  if (t < S(2)) {
+    const lt = t;
+    const q = t >= S(1) ? `<div class="lbl" style="font-size:56px;color:var(--ink);${rise(t-S(1))}">The muscle range<span style="color:var(--lime)">?</span></div>` : `<div style="height:84px"></div>`;
+    return strike812(lt, q);
+  }
+  // Scene B: research — 6 to 30 all build muscle
+  if (t < S(5)) {
+    const lt = t - S(2);
+    const cnt = Math.round(6 + 24*ease((t - S(3)) / (ODUR[3]*0.9)));
+    const fill = ease((t - S(3)) / (ODUR[3]*0.9));
+    const ok = t >= S(4);
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:36px;width:700px;${rise(lt)}">
+      <div class="lbl">📄 Research</div>
+      <div class="big" style="font-size:240px;color:${ok?'var(--lime)':'var(--ink)'}">${t < S(3) ? 6 : cnt}</div>
+      <div style="position:relative;width:640px;height:40px;border-radius:20px;background:#232733;direction:ltr">
+        <div style="position:absolute;left:0;top:0;height:100%;width:${fill*100}%;border-radius:20px;background:var(--lime)"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;width:640px;direction:ltr;font-weight:900;font-size:48px;color:var(--dim)"><span>6</span><span>30</span></div>
+      <div style="font-weight:900;font-size:64px;${pop(t - S(4))}">💪 All build muscle</div>
+    </div>`;
+  }
+  // Scene C: one condition
+  if (t < S(6)) {
+    const lt = t - S(5);
+    return `<div style="width:420px;height:420px;border-radius:50%;border:16px solid var(--lime);display:flex;align-items:center;justify-content:center;${pop(lt,0,0.3)}">
+      <div class="big" style="font-size:280px;color:var(--lime)">1</div></div>`;
+  }
+  // Scene D: stop with 1-2 reps left
+  if (t < S(7)) {
+    const lt = t - S(6);
+    const filled = Math.floor(10 * ease(lt / (ODUR[6]*0.8)));
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:40px;${rise(lt)}">
+      <div class="lbl">Get close to failure</div>
+      ${dots(12, filled, null, lt, 0)}
+      <div style="font-weight:900;font-size:60px;${pop(lt - ODUR[6]*0.8)}"><span class="hl">1–2</span> reps left</div>
+    </div>`;
+  }
+  // Scene E: 12 of 20 = warm-up
+  if (t < S(9)) {
+    const lt = t - S(7);
+    const fill = Math.floor(12 * ease(lt / 1.4));
+    const stamp = t >= S(8);
+    let segs = '';
+    for (let k = 0; k < 20; k++) segs += `<span style="flex:1;height:70px;border-radius:8px;background:${k < fill ? 'var(--lime)' : '#2a2e39'}"></span>`;
+    const sp = back((t - S(8) - 0.5) / 0.3);
+    return `<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:30px;width:700px;${rise(lt)}">
+      <div style="display:flex;justify-content:space-between;width:680px;direction:ltr;font-weight:900;font-size:70px"><span class="hl">12</span><span style="color:var(--dim)">/ 20</span></div>
+      <div style="display:flex;gap:6px;width:680px;direction:ltr">${segs}</div>
+      <div class="lbl">You could've done 20</div>
+      ${stamp ? `<div style="position:absolute;top:110px;font-weight:900;font-size:120px;color:var(--red);border:12px solid var(--red);border-radius:24px;padding:0 40px;background:rgba(13,15,19,.85);opacity:${clamp((t-S(8)-0.5)/0.1)};transform:rotate(-10deg) scale(${2-sp})">WARM-UP</div>` : ''}
+    </div>`;
+  }
+  // Scene F: not the number — the last two reps
+  if (t < S(11)) {
+    const lt = t - S(9);
+    if (t < S(10)) {
+      return `<div style="display:flex;gap:30px;direction:ltr;${rise(lt)}">${[6,10,15,20].map((n,k)=>`<div class="chip" style="color:var(--dim);${pop(lt,k*0.12)}">${n}</div>`).join('')}</div>`;
+    }
+    const l2 = t - S(10);
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:40px;${rise(l2)}">
+      ${dots(10, 8, l2 > 0.4 ? 8 : null, l2, l2)}
+      <div style="font-weight:900;font-size:64px;color:var(--red);${pop(l2,0.4)}">↑ The last 2 reps</div>
+    </div>`;
+  }
+  // Scene G: pick the number you like
+  if (t < S(13)) {
+    const lt = t - S(11);
+    const per = ODUR[12] / 4;
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:40px;${rise(lt)}">
+      <div class="lbl">Pick your range</div>
+      <div style="display:grid;grid-template-columns:repeat(2,170px);gap:30px;direction:ltr">
+        ${[6,10,15,20].map((n,k)=>{ const on = t >= S(12) + k*per; return `<div class="chip" style="${on?'background:var(--lime);color:#0d0f13;':'color:var(--dim);'}transform:scale(${on?1+0.15*(1-ease((t-S(12)-k*per)/0.3)):1})">${n}</div>`; }).join('')}
+      </div></div>`;
+  }
+  // Scene H: loop back to the hook
+  if (t < S(14)) return strike812(t - S(13), `<div style="height:84px"></div>`);
+  const lt = t - S(14);
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:40px;${rise(lt)}">
+    ${dots(10, 8, 8, lt, lt)}
+    <div style="font-weight:900;font-size:64px;color:var(--red)">Last 2 reps = tough 🔥</div></div>`;
+}
+
+window.render = function(t) {
+  let i = T.length - 1;
+  for (let k = 0; k < T.length; k++) if (t < T[k].start + T[k].dur) { i = k; break; }
+  document.getElementById('visual').innerHTML = visual(t);
+  document.getElementById('caption').innerHTML = caption(i, t);
+  document.getElementById('pbar').style.width = (clamp(t / TOTAL) * 100) + '%';
+  const g = 0.5 + 0.5*Math.sin(t*0.8);
+  document.getElementById('bgglow').style.background =
+    `radial-gradient(900px 700px at ${30+20*g}% ${35+10*g}%, rgba(198,255,61,.10), transparent 70%)`;
+};
+render(0);
+</script>
+</body>
+</html>

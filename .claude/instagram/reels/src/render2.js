@@ -5,7 +5,7 @@ const [,, html, timesPath, total, mode, out, ...rest] = process.argv; const FPS 
 (async () => {
   const b = await chromium.launch(); const p = await b.newPage({ viewport:{width:1080,height:1920}, deviceScaleFactor:1 });
   p.on('pageerror', e => { console.error('PAGEERR', e.message); process.exitCode = 1; });
-  await p.addInitScript(([t, tot]) => { window.TIMES = t; window.TOTAL = tot; }, [JSON.parse(fs.readFileSync(timesPath)), +total]);
+  await p.addInitScript(([t, tot, sh]) => { window.TIMES = t; window.TOTAL = tot; if (sh) window.SHIRT = sh; }, [JSON.parse(fs.readFileSync(timesPath)), +total, process.env.SHIRT || '']);
   await p.goto('file://' + html); await p.evaluate(() => document.fonts.ready);
   if (mode === 'events') { for (let f = 0; f < Math.ceil(+total*FPS); f++) await p.evaluate(t => render(t), f/FPS); fs.writeFileSync(out, JSON.stringify(await p.evaluate(() => window.__ev))); }
   else if (mode === 'preview') {

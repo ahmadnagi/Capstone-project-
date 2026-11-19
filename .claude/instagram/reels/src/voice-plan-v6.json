@@ -1,0 +1,16 @@
+{"sources":{"a":"/tmp/claude-0/-home-user-Capstone-project-/6ff9b82c-a09c-5d88-a79b-024a8625f0d9/scratchpad/wav/rec48.wav","b":"/tmp/claude-0/-home-user-Capstone-project-/6ff9b82c-a09c-5d88-a79b-024a8625f0d9/scratchpad/wav/rec2_48.wav","c":"/tmp/claude-0/-home-user-Capstone-project-/6ff9b82c-a09c-5d88-a79b-024a8625f0d9/scratchpad/wav/rec3_48.wav"},
+ "cuts":[["a",33.73],["a",37.72]],
+ "lines":[
+  ["You don't need 8–12 reps.",[["b",0.53,2.27]],0.2,0.45],
+  ["And I bet that this is what you've been told.",[["c",0.76,3.24]],0.2,0.45],
+  ["But the research actually says that 6 to 30 reps all build muscle.",[["b",10.30,13.14],["b",13.62,14.41]],0.22,0.5],
+  ["Only on one condition.",[["b",16.62,17.83]],0.2,0.5],
+  ["Push the set until you've got 1 or 2 reps left.",[["a",18.46,21.08],["a",21.59,22.54]],0.22,0.45],
+  ["Stop at 12 when you could do 20?",[["a",24.62,25.56],["a",25.91,26.93]],0.2,0.45],
+  ["That's not a set. That's a warm-up.",[["a",29.20,31.35]],0.2,0.45],
+  ["It's not the number.",[["a",32.78,33.73]],0.2,0.25],
+  ["It's the last 2 reps.",[["a",33.73,35.31]],0.2,0.45],
+  ["So pick the range you like.",[["a",36.20,37.72]],0.2,0.2],
+  ["6, 10, 15, 20.",[["a",37.72,38.52],["a",38.93,40.73]],0.18,0.45],
+  ["You don't need 8–12 reps.",[["a",41.40,43.51]],0.2,0.4],
+  ["The last 2 reps need to be tough. That's what counts.",[["a",44.19,45.23],["a",45.63,47.86]],0.2,0]]}

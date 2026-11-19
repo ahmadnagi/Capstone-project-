@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="700.css">
+<link rel="stylesheet" href="900.css">
+<style>
+  :root { --bg:#0d0f13; --ink:#ffffff; --dim:#8a8f98; --lime:#c6ff3d; --red:#ff4d4d; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { width:1080px; height:1920px; overflow:hidden; background:var(--bg); font-family:'Cairo', sans-serif; color:var(--ink); }
+  #bg { position:absolute; inset:0; }
+  #redvig { position:absolute; inset:0; opacity:0; background: radial-gradient(ellipse 75% 60% at 50% 45%, rgba(255,77,77,0) 30%, rgba(255,60,60,.5) 72%, rgba(255,40,40,.8) 100%); }
+  #stage { position:absolute; left:145px; top:270px; width:790px; height:860px; overflow:visible; }
+  #caption { position:absolute; left:175px; top:1145px; width:730px; height:235px; display:flex; flex-wrap:wrap; align-content:center; justify-content:center; gap:4px 20px; text-align:center; font-weight:900; font-size:66px; line-height:1.18; }
+  .w { display:inline-block; }
+  .hl { color:var(--lime); }
+  .hr { color:var(--red); }
+  #progress { position:absolute; left:60px; top:240px; width:790px; height:8px; border-radius:4px; background:#232733; overflow:hidden; }
+  #pbar { position:absolute; left:0; top:0; height:100%; background:var(--lime); }
+  #brand { display:none; }
+  #logo { position:absolute; left:0; top:1384px; }
+  #logo .mark { font-weight:900; font-size:40px; letter-spacing:5px; color:#fff; }
+  #logo .mark b { color:var(--lime); font-weight:900; }
+  #logo .sub { font-weight:700; font-size:22px; letter-spacing:7px; color:var(--dim); }
+  svg text { font-family:'Cairo', sans-serif; font-weight:900; }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<div id="redvig"></div>
+<div id="progress" style="display:none"><div id="pbar"></div></div>
+<svg id="stage" viewBox="0 0 790 860" width="790" height="860"></svg>
+<div id="caption"></div>
+<div id="brand">COACH NAGI</div>
+<svg id="logo" width="1080" height="140" viewBox="0 0 1080 140"><text id="lg1" x="540" y="80" text-anchor="middle" font-size="84" font-weight="900" fill="#fff" letter-spacing="9">HUSL</text><text id="lg2" x="540" y="120" text-anchor="middle" font-size="25" font-weight="900" fill="#c6ff3d" lengthAdjust="spacing">PROGRAMMING</text></svg>
+<script>
+const TIMES = window.TIMES;   // [{text,start,dur}] injected
+const HL = [["8–12"],["told."],["6","30","muscle."],["one"],["1","2"],["12","20?"],["warm-up."],["number."],["last","2"],["like."],[],["8–12"],["tough.","counts."]];
+const RED = [[],[],[],[],[],[],[],[],["last","2"],[],[],[],["tough."]];
+const T = TIMES.map((b,i)=>({s:b.text, start:b.start, dur:b.dur, h:HL[i]||[], r:RED[i]||[], n:b.text.split(/\s+/).length}));
+const TOTAL = window.TOTAL;
+const S = i => T[i].start, E = i => T[i].start + T[i].dur;
+
+// ---------- math helpers ----------
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,u)=>a+(b-a)*u;
+const ease=x=>{x=clamp(x);return 1-Math.pow(1-x,3);};
+const inout=x=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;};
+const back=x=>{x=clamp(x);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2);};
+const elastic=x=>{x=clamp(x);if(x===0||x===1)return x;return Math.pow(2,-10*x)*Math.sin((x*10-.75)*(2*Math.PI)/3)+1;};
+function popT(lt,at=0,d=.4){const p=back((lt-at)/d);return `opacity="${clamp((lt-at)/.1)}" transform-origin="center" `;}
+
+// ---------- rep engine ----------
+// spec: {n, ecc:(i)=>sec, con:(i)=>sec, start, gap}
+function reps(lt, sp){
+  let c = sp.start||0;
+  for(let i=0;i<sp.n;i++){
+    const e=K(sp.ecc)(i), k=K(sp.con)(i), g=sp.gap!=null?K(sp.gap)(i):0;
+    if(lt<c) return {h:1,done:i,ph:'idle',u:0,i};
+    if(lt<c+e){const u=(lt-c)/e;return {h:1-inout(u),done:i,ph:'ecc',u,i};}
+    c+=e;
+    if(lt<c+k){const u=(lt-c)/k;const grind=sp.grind?sp.grind(i):0;
+      const hu = grind>0 ? clamp(u + grind*0.18*Math.sin(u*Math.PI)*(-1)) : u;
+      return {h:inout(hu),done:i,ph:'con',u,i};}
+    c+=k;
+    if(lt<c+g) return {h:1,done:i+1,ph:'idle',u:0,i};
+    c+=g;
+  }
+  return {h:1,done:sp.n,ph:'done',u:1,i:sp.n};
+}
+const K = v => (typeof v==='function'? v : ()=>v);
+
+// ---------- the lifter ----------
+// local coordinates: ~520 x 380, floor at y=372
+function ik(S,H,L1,L2){
+  let dx=H[0]-S[0], dy=H[1]-S[1]; let d=Math.hypot(dx,dy);
+  d=clamp(d, Math.abs(L1-L2)+.5, L1+L2-.5);
+  const a=Math.acos(clamp((L1*L1+d*d-L2*L2)/(2*L1*d),-1,1)), th=Math.atan2(dy,dx);
+  const e1=[S[0]+L1*Math.cos(th+a),S[1]+L1*Math.sin(th+a)], e2=[S[0]+L1*Math.cos(th-a),S[1]+L1*Math.sin(th-a)];
+  return e1[0]>e2[0]?e1:e2;
+}
+function face(mood, strain, t){
+  // head centre (70,228) r=30, face points up-right
+  let f='';
+  const flush = clamp(strain);
+  if(flush>0.02) f+=`<circle cx="70" cy="226" r="30" fill="#ff3b3b" opacity="${flush*0.22}"/><circle cx="80" cy="222" r="8" fill="#ff3b3b" opacity="${flush*0.6}"/>`;
+  // hair (back of head)
+  f+=`<path d="M44 238 A30 30 0 0 1 58 200 L64 214 A16 16 0 0 0 54 240 Z" fill="#1c1a19"/>`;
+  // beard along jaw
+  f+=`<path d="M86 236 Q100 222 98 206 L92 210 Q92 226 80 232 Z" fill="#1c1a19" opacity=".9"/>`;
+  // ear
+  f+=`<ellipse cx="62" cy="232" rx="6" ry="8" fill="#a8704c"/>`;
+  // nose
+  f+=`<path d="M78 197 Q86 190 84 202" fill="#b9805a" stroke="#8d5b3c" stroke-width="2"/>`;
+  if(mood==='strain'){
+    // squeezed eye ">"
+    f+=`<path d="M64 208 L72 212 L64 216" fill="none" stroke="#111" stroke-width="3.5" stroke-linecap="round"/>`;
+    f+=`<path d="M60 199 L76 205" stroke="#111" stroke-width="4" stroke-linecap="round"/>`;
+    // gritted teeth
+    f+=`<rect x="84" y="208" width="14" height="10" rx="3" fill="#fff" stroke="#111" stroke-width="2.5" transform="rotate(-35 91 213)"/>`;
+    f+=`<line x1="87" y1="210" x2="93" y2="219" stroke="#111" stroke-width="1.5"/>`;
+    // vein
+    f+=`<path d="M56 206 q4 -4 2 -9" stroke="#c0392b" stroke-width="2.5" fill="none" opacity="${clamp(strain*1.5-0.4)}"/>`;
+  } else if(mood==='happy'){
+    f+=`<path d="M63 210 Q69 204 75 210" fill="none" stroke="#111" stroke-width="3.5" stroke-linecap="round"/>`;
+    f+=`<path d="M84 210 Q94 214 96 204" fill="#fff" stroke="#111" stroke-width="2.5"/>`;
+  } else if(mood==='cool'){
+    f+=`<path d="M58 204 L82 200 L84 212 Q72 220 62 214 Z" fill="#111"/>`;
+    f+=`<path d="M62 206 L70 205" stroke="#666" stroke-width="2"/>`;
+    f+=`<path d="M86 212 Q94 212 95 206" fill="none" stroke="#111" stroke-width="3" stroke-linecap="round"/>`;
+  } else {
+    f+=`<circle cx="70" cy="210" r="3.5" fill="#111"/>`;
+    f+=`<path d="M62 202 L76 203" stroke="#111" stroke-width="3.5" stroke-linecap="round"/>`;
+    f+=`<path d="M86 212 L95 207" stroke="#111" stroke-width="3" stroke-linecap="round"/>`;
+  }
+  // sweat
+  if(strain>0.45){
+    for(let k=0;k<3;k++){
+      const ph=((t*1.6+k/3)%1), a=-2.2+k*0.55;
+      const x=70+Math.cos(a)*(36+ph*50), y=226+Math.sin(a)*(36+ph*50);
+      f+=`<path d="M${x} ${y-9} Q${x+6} ${y} ${x} ${y+5} Q${x-6} ${y} ${x} ${y-9}Z" fill="#7fd3ff" opacity="${(1-ph)*clamp(strain*2-0.9)}"/>`;
+    }
+  }
+  return f;
+}
+function plate(H, r, col, label){
+  if(r<=0) return '';
+  return `<g>
+    <circle cx="${H[0]}" cy="${H[1]}" r="${r}" fill="${col}" stroke="rgba(0,0,0,.35)" stroke-width="6"/>
+    <circle cx="${H[0]}" cy="${H[1]}" r="${r*0.62}" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="4"/>
+    <circle cx="${H[0]}" cy="${H[1]}" r="12" fill="#d9dde3" stroke="#7d838c" stroke-width="3"/>
+    ${label && r>40 ? `<text x="${H[0]}" y="${H[1]-r*0.66}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.round(r*0.3)}" fill="rgba(255,255,255,.9)">${label}</text>`:''}
+  </g>`;
+}
+
+// ---------- real-face sticker head ----------
+const FACE = {normal:['f3/face_normal.png',358,568], strain:['f3/face_strain.png',353,568], happy:['f3/face_happy.png',345,568], cool:['f3/face_smug.png',355,568]};
+function photoHead(mood, st, t, px=52, py=150, base=-10, Hh=240){
+  const f = FACE[mood] || FACE.normal;
+  const Ww = Hh * f[1] / f[2];
+  const cx = px + Math.sin(t*61)*4*st, cy = py + Math.cos(t*47)*3*st;
+  const rot = base + Math.sin(t*2.6)*4 + (st>0.4 ? Math.sin(t*38)*3*st : 0);
+  const sc = 1 + (mood==='happy' ? 0.04*Math.sin(t*9) : 0);
+  let s = `<g transform="translate(${cx} ${cy}) rotate(${rot}) scale(${sc})">`;
+  s += `<image href="${f[0]}" x="${-Ww/2}" y="${-Hh/2}" width="${Ww}" height="${Hh}"/>`;
+  if (mood==='strain' && st>0.05) s += `<image href="f3/face_strain_red.png" x="${-Ww/2}" y="${-Hh/2}" width="${Ww}" height="${Hh}" opacity="${clamp(st)*0.75}"/>`;
+  if (mood==='cool') {
+    // sunglasses over the eyes (eyes sit ~32% down the sticker)
+    const y = -Hh/2 + Hh*0.30, x0 = -Ww*0.40, x1 = Ww*0.40;
+    s += `<path d="M${x0} ${y} L${x1} ${y} L${x1-4} ${y+22} Q${Ww*0.18} ${y+34} ${Ww*0.05} ${y+20} L${-Ww*0.05} ${y+20} Q${-Ww*0.18} ${y+34} ${x0+4} ${y+22} Z" fill="#0b0b0b"/>`;
+    s += `<path d="M${x0+10} ${y+6} L${x0+30} ${y+6}" stroke="#555" stroke-width="3" stroke-linecap="round"/>`;
+  }
+  // sweat flying off when straining
+  if (st > 0.45) for (let k=0;k<4;k++){
+    const ph=((t*1.7+k/4)%1), a=-2.6+k*0.5, rr=Hh*0.42+ph*60;
+    const x=Math.cos(a)*rr, y=Math.sin(a)*rr*0.9;
+    s += `<path d="M${x} ${y-10} Q${x+7} ${y} ${x} ${y+6} Q${x-7} ${y} ${x} ${y-10}Z" fill="#7fd3ff" opacity="${(1-ph)*clamp(st*2-0.9)}"/>`;
+  }
+  return s + `</g>`;
+}
+
+// ---------- front-facing dumbbell curl ----------
+// local box ~420 x 630, feet on y=620. h=1 -> fully curled, h=0 -> arms straight
+function dumbbell(x, y, br, col){
+  const bw = 14 + br*0.45;
+  return `<line x1="${x-34}" y1="${y}" x2="${x+34}" y2="${y}" stroke="#9aa0a8" stroke-width="11" stroke-linecap="round"/>
+    <rect x="${x-34-bw}" y="${y-br}" width="${bw}" height="${2*br}" rx="7" fill="${col}" stroke="rgba(0,0,0,.35)" stroke-width="4"/>
+    <rect x="${x+34}" y="${y-br}" width="${bw}" height="${2*br}" rx="7" fill="${col}" stroke="rgba(0,0,0,.35)" stroke-width="4"/>`;
+}
+function curler(o){
+  const t=o.t||0, st=clamp(o.strain||0);
+  const skin='#c99470', skinD='#b07e5c', shirt=window.SHIRT||'#c6ff3d', shorts='#262a33';
+  const phi = clamp(o.h)*2.45;
+  const sx=Math.sin(t*61)*3*st, sy=Math.cos(t*47)*2*st;
+  const br = Math.max(12, (o.plateR??60)*0.55), col=o.plateColor||'#e8483f';
+  let g=`<g transform="translate(${o.x} ${o.y}) scale(${o.s})" opacity="${o.alpha??1}">`;
+  g+=`<ellipse cx="210" cy="622" rx="170" ry="14" fill="rgba(0,0,0,.45)"/>`;
+  // legs + shoes + shorts
+  g+=`<line x1="178" y1="420" x2="170" y2="598" stroke="${skin}" stroke-width="42" stroke-linecap="round"/>`;
+  g+=`<line x1="242" y1="420" x2="250" y2="598" stroke="${skin}" stroke-width="42" stroke-linecap="round"/>`;
+  g+=`<ellipse cx="160" cy="610" rx="38" ry="15" fill="#f1f1f1"/><ellipse cx="260" cy="610" rx="38" ry="15" fill="#f1f1f1"/>`;
+  g+=`<path d="M142 372 L278 372 L286 488 L218 488 L210 436 L202 488 L134 488 Z" fill="${shorts}" stroke="${shorts}" stroke-width="8" stroke-linejoin="round"/>`;
+  // torso + neck
+  g+=`<path d="M116 232 L304 232 L284 392 L136 392 Z" fill="${shirt}" stroke="${shirt}" stroke-width="22" stroke-linejoin="round"/>`;
+  // head (real face) sits on the neck
+  g+=photoHead(o.mood||'normal', st, t, 210, 92, 0, 290);
+  // arms
+  const pump = clamp(o.h);
+  for (const side of [-1, 1]){
+    const shx = 210 + side*94, shy = 246, elx = 210 + side*108, ely = 366;
+    const hx = elx + sx, hy = ely + 118*Math.cos(phi) + sy;
+    g+=`<line x1="${shx}" y1="${shy}" x2="${elx}" y2="${ely}" stroke="${skinD}" stroke-width="38" stroke-linecap="round"/>`;
+    g+=`<ellipse cx="${(shx+elx)/2 - side*2}" cy="${(shy+ely)/2+6}" rx="${20+18*pump}" ry="${33+7*pump}" fill="${skin}"/>`;
+    g+=`<circle cx="${shx}" cy="${shy}" r="25" fill="${shirt}"/>`;
+    g+=`<line x1="${elx}" y1="${ely}" x2="${hx}" y2="${hy}" stroke="${skin}" stroke-width="32" stroke-linecap="round"/>`;
+    g+=dumbbell(hx, hy, br, col);
+    g+=`<circle cx="${hx}" cy="${hy}" r="16" fill="${skin}"/>`;
+    if (st>0.6) for (let k=0;k<3;k++){ const a=-Math.PI/2 + side*(0.5+k*0.45), r1=br+40, r2=r1+20+6*Math.sin(t*20+k);
+      g+=`<line x1="${hx+Math.cos(a)*r1}" y1="${hy+Math.sin(a)*r1}" x2="${hx+Math.cos(a)*r2}" y2="${hy+Math.sin(a)*r2}" stroke="#ff4d4d" stroke-width="5" stroke-linecap="round" opacity="${clamp(st*2-1.2)}"/>`; }
+  }
+  return g + `</g>`;
+}
+// scenes were laid out for the bench figure: map that placement onto the standing figure
+function lifter(o){
+  const s = o.s*0.636, cx = o.x + 260*o.s, feet = Math.min(o.y + 380*o.s + 111, 850);
+  return curler({...o, s, x: cx - 210*s, y: feet - 625*s});
+}
+function benchLifter(o){
+  const t=o.t||0, st=clamp(o.strain||0);
+  const SH=[150,236], HP=[322,240], KN=[408,186], AN=[426,350];
+  const sx=Math.sin(t*61)*4*st, sy=Math.cos(t*47)*3*st;
+  const H=[158+sx, 192-146*o.h+sy];
+  const El=ik(SH,H,98,96);
+  const skin='#b9805a', skinD='#a06b48', shirt=o.shirt||'#c6ff3d', shorts='#262a33';
+  let g=`<g transform="translate(${o.x} ${o.y}) scale(${o.s})" opacity="${o.alpha??1}">`;
+  // shadow + bench
+  g+=`<ellipse cx="220" cy="374" rx="230" ry="12" fill="rgba(0,0,0,.45)"/>`;
+  g+=`<rect x="70" y="272" width="16" height="100" fill="#4a505c"/><rect x="314" y="272" width="16" height="100" fill="#4a505c"/>`;
+  g+=`<rect x="40" y="364" width="80" height="10" rx="4" fill="#4a505c"/><rect x="280" y="364" width="80" height="10" rx="4" fill="#4a505c"/>`;
+  g+=`<rect x="36" y="252" width="330" height="24" rx="10" fill="#2f343e"/>`;
+  // legs
+  g+=`<line x1="${HP[0]}" y1="${HP[1]}" x2="${KN[0]}" y2="${KN[1]}" stroke="${shorts}" stroke-width="44" stroke-linecap="round"/>`;
+  g+=`<line x1="${KN[0]}" y1="${KN[1]}" x2="${AN[0]}" y2="${AN[1]}" stroke="${skin}" stroke-width="30" stroke-linecap="round"/>`;
+  g+=`<ellipse cx="${AN[0]+14}" cy="${AN[1]+12}" rx="30" ry="13" fill="#f1f1f1"/>`;
+  // torso
+  g+=`<line x1="${SH[0]}" y1="${SH[1]}" x2="${HP[0]-10}" y2="${HP[1]}" stroke="${shirt}" stroke-width="58" stroke-linecap="round"/>`;
+  g+=`<ellipse cx="${SH[0]+30}" cy="${SH[1]-16}" rx="52" ry="26" fill="${shirt}"/>`;
+  g+=`<line x1="${HP[0]-24}" y1="${HP[1]}" x2="${HP[0]+6}" y2="${HP[1]}" stroke="${shorts}" stroke-width="58" stroke-linecap="round"/>`;
+  // neck + head
+  g+=`<line x1="96" y1="232" x2="${SH[0]-10}" y2="${SH[1]}" stroke="${skinD}" stroke-width="26" stroke-linecap="round"/>`;
+  // arm (behind plate)
+  g+=`<line x1="${SH[0]}" y1="${SH[1]}" x2="${El[0]}" y2="${El[1]}" stroke="${skinD}" stroke-width="30" stroke-linecap="round"/>`;
+  g+=`<line x1="${El[0]}" y1="${El[1]}" x2="${H[0]}" y2="${H[1]}" stroke="${skin}" stroke-width="26" stroke-linecap="round"/>`;
+  g+=`<circle cx="${SH[0]}" cy="${SH[1]}" r="17" fill="${shirt}"/>`;
+  // effort lines
+  if(st>0.6){
+    for(let k=0;k<3;k++){const a=-0.4+k*0.4, r1=(o.plateR||60)+14, r2=r1+18+6*Math.sin(t*20+k);
+      g+=`<line x1="${H[0]+Math.cos(a)*r1}" y1="${H[1]+Math.sin(a)*r1}" x2="${H[0]+Math.cos(a)*r2}" y2="${H[1]+Math.sin(a)*r2}" stroke="#ff4d4d" stroke-width="5" stroke-linecap="round" opacity="${clamp(st*2-1.2)}"/>`;}
+  }
+  g+=plate(H, o.plateR??60, o.plateColor||'#e8483f', o.plateLabel||'');
+  g+=photoHead(o.mood||'normal', st, t);
+  g+=`</g>`;
+  return g;
+}
+
+// ---------- UI bits ----------
+function counter(x,y,label,val,col='#fff',size=150,bump=0){
+  const sc=1+0.18*bump;
+  return `<g transform="translate(${x} ${y}) scale(${sc})"><text x="0" y="-${size*0.86}" text-anchor="middle" font-size="30" fill="#8a8f98" letter-spacing="4">${label}</text>
+  <text x="0" y="0" text-anchor="middle" font-size="${size}" fill="${col}">${val}</text></g>`;
+}
+function strike812(lt, x=395, y=150, size=200){
+  const sp=ease((lt-0.3)/0.4), p=back(lt/0.35);
+  return `<g transform="translate(${x} ${y}) scale(${0.6+0.4*p})" opacity="${clamp(lt/0.1)}">
+    <text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-size="${size}" fill="#fff">8–12</text>
+    <line x1="${-size*1.05}" y1="${size*0.08}" x2="${-size*1.05+size*2.1*sp}" y2="${size*0.08 - size*0.36*sp}" stroke="#ff4d4d" stroke-width="${size*0.12}" stroke-linecap="round"/>
+  </g>`;
+}
+function tank(x,y,left,max,label,col){
+  const H=330, W=90, f=clamp(left/max);
+  return `<g transform="translate(${x} ${y})">
+    <text x="${W/2}" y="-20" text-anchor="middle" font-size="26" fill="#8a8f98" letter-spacing="3">${label}</text>
+    <rect x="${W/2-18}" y="-4" width="36" height="14" rx="4" fill="#3a3f4b"/>
+    <rect x="0" y="8" width="${W}" height="${H}" rx="18" fill="#1a1d24" stroke="#3a3f4b" stroke-width="5"/>
+    <rect x="8" y="${8+8+(H-16)*(1-f)}" width="${W-16}" height="${(H-16)*f}" rx="12" fill="${col}"/>
+    <text x="${W/2}" y="${H+80}" text-anchor="middle" font-size="64" fill="${col}">${left}</text>
+  </g>`;
+}
+function dots(x,y,n,green,red,t){
+  let s=''; const gap=58;
+  for(let k=0;k<n;k++){
+    const isR = red!=null && k>=red, isG=k<green;
+    const pulse = isR ? 1+0.15*Math.sin(t*10) : 1;
+    s+=`<circle cx="${x+k*gap}" cy="${y}" r="${22*pulse}" fill="${isR?'#ff4d4d':isG?'#c6ff3d':'none'}" stroke="${isR?'#ff4d4d':isG?'#c6ff3d':'#3a3f4b'}" stroke-width="5" ${isR?'style="filter:drop-shadow(0 0 14px #ff4d4d)"':''}/>`;
+  }
+  return s;
+}
+
+function pills(cx,y,n,lit,col){
+  const w=78, g=16, x0=cx-(n*w+(n-1)*g)/2; let s='';
+  for(let k=0;k<n;k++){ const on=k<lit; s+=`<rect x="${x0+k*(w+g)}" y="${y-30}" width="${w}" height="60" rx="16" fill="${on?col:'none'}" stroke="${on?col:'#3a3f4b'}" stroke-width="5"/>`; }
+  return s;
+}
+function stamp(lt, text, x, y, col='#ff4d4d', size=130){
+  if(lt<0) return '';
+  const p=back(lt/0.28), sc=2.2-1.2*p;
+  return `<g transform="translate(${x} ${y}) rotate(-10) scale(${sc})" opacity="${clamp(lt/0.08)}">
+    <rect x="${-size*2.1}" y="${-size*0.62}" width="${size*4.2}" height="${size*1.24}" rx="22" fill="rgba(13,15,19,.88)" stroke="${col}" stroke-width="12"/>
+    <text x="0" y="${size*0.05}" text-anchor="middle" dominant-baseline="middle" font-size="${size}" fill="${col}">${text}</text></g>`;
+}
+function chip(x,y,txt,on,bump=0){
+  const sc=1+0.2*bump;
+  return `<g transform="translate(${x} ${y}) scale(${sc})"><rect x="-70" y="-70" width="140" height="140" rx="30" fill="${on?'#c6ff3d':'#1a1d24'}"/>
+  <text x="0" y="6" text-anchor="middle" dominant-baseline="middle" font-size="84" fill="${on?'#0d0f13':'#8a8f98'}">${txt}</text></g>`;
+}
+function confetti(lt){
+  let s=''; if(lt<0) return s;
+  for(let k=0;k<46;k++){
+    const a=(k*137.5)%360*Math.PI/180, v=260+((k*53)%140), tt=Math.min(lt,1.6);
+    const x=395+Math.cos(a)*v*tt, y=330+Math.sin(a)*v*tt+260*tt*tt;
+    const col=['#c6ff3d','#ffffff','#ff4d4d','#7fd3ff'][k%4];
+    s+=`<rect x="${x}" y="${y}" width="14" height="22" rx="3" fill="${col}" opacity="${clamp(1.7-lt)}" transform="rotate(${k*40+lt*400} ${x} ${y})"/>`;
+  }
+  return s;
+}
+
+// ---------- event log for sound design ----------
+window.__ev=[]; const __last={};
+const ONCE=new Set(['mus','ok','x5','win']);
+function ev(key,val,t,type){ const fire = __last[key]===undefined ? (ONCE.has(key) && val) : val!==__last[key]; if(fire && type) window.__ev.push({t,type}); __last[key]=val; }
+
+// ---------- scenes ----------
+const MAIN={x:395-260*1.38,y:215,s:1.38};
+function scene(t){
+  let svg='';
+  // Scene 0: hook + "the muscle range"  (beats 0-1)
+  if(t<S(2)){
+    ev('scene',0,t,'whoosh');
+    const sp={n:5,ecc:.48,con:.4,start:.45,gap:.1};
+    const r=reps(t,sp); ev('c0',r.done,t,'tick');
+    const lastIn = r.i>=4 ? (r.ph==='con'?0.5:0.3) : 0;
+    svg+=lifter({...MAIN,h:r.h,t,strain:lastIn,mood:lastIn>0.4?'strain':'normal',plateR:66,plateLabel:'60'});
+    svg+=strike812(t, 395, 175, 130);
+    const bump=r.ph==='idle'?0:0;
+    svg+=`<text x="395" y="58" text-anchor="middle" font-size="40" fill="#8a8f98" letter-spacing="4">REP <tspan fill="#c6ff3d" font-size="52">${r.done===0?'–':7+r.done}</tspan></text>`;
+    return svg;
+  }
+  // Scene 1: research — heavy 6 vs light 30 (beat 2)
+  if(t<S(3)){
+    ev('scene',1,t,'whoosh');
+    const lt=t-S(2), D=S(3)-S(2)-0.4;
+    const heavy=reps(lt,{n:6,ecc:D/6*0.5,con:i=>D/6*0.5*(i>=4?1.25:0.75)});
+    const light=reps(lt,{n:30,ecc:D/30*0.5,con:i=>D/30*0.5*(i>=27?1.3:0.9)});
+    ev('c1',heavy.done,t,'tick');
+    const hs=heavy.i>=4&&heavy.ph!=='done'?0.85:0, ls=light.i>=26&&light.ph!=='done'?0.75:0;
+    const fin=lt>D;
+    svg+=`<text x="198" y="70" text-anchor="middle" font-size="34" fill="#8a8f98" letter-spacing="3">HEAVY</text>`;
+    svg+=`<text x="592" y="70" text-anchor="middle" font-size="34" fill="#8a8f98" letter-spacing="3">LIGHT</text>`;
+    svg+=counter(198,250,'REPS',heavy.done,fin?'#c6ff3d':'#fff',130);
+    svg+=counter(592,250,'REPS',light.done,fin?'#c6ff3d':'#fff',130);
+    svg+=`<line x1="395" y1="40" x2="395" y2="700" stroke="#232733" stroke-width="4"/>`;
+    svg+=lifter({x:-8,y:420,s:0.8,h:heavy.h,t,strain:hs,mood:fin?'happy':hs?'strain':'normal',plateR:82,plateColor:'#e8483f',plateLabel:'100'});
+    svg+=lifter({x:392,y:420,s:0.8,h:light.h,t:t+0.3,strain:ls,mood:fin?'happy':ls?'strain':'normal',plateR:40,plateColor:'#7dd3fc',plateLabel:''});
+    if(lt>D-0.2){ ev('mus',1,t,'pop'); const p=back((lt-D+0.2)/.35);
+      svg+=`<g transform="translate(395 330) scale(${p})"><rect x="-300" y="-48" width="600" height="96" rx="48" fill="#c6ff3d"/><text x="0" y="6" text-anchor="middle" dominant-baseline="middle" font-size="46" fill="#0d0f13">💪 BOTH BUILD MUSCLE</text></g>`;}
+    return svg;
+  }
+  // Scene 2: "On one condition" (beat 3)
+  if(t<S(4)){
+    ev('scene',2,t,'whoosh');
+    const lt=t-S(3), p=elastic(lt/0.9);
+    svg+=`<g transform="translate(395 380) scale(${p})"><circle r="170" fill="#0d0f13" stroke="#c6ff3d" stroke-width="18"/>
+      <text x="0" y="12" text-anchor="middle" dominant-baseline="middle" font-size="230" fill="#c6ff3d">1</text></g>`;
+    svg+=`<text x="395" y="640" text-anchor="middle" font-size="52" fill="#fff" opacity="${clamp((lt-0.3)/.3)}" letter-spacing="6">CONDITION</text>`;
+    return svg;
+  }
+  // Scene 3: push until 1-2 left (beat 4)
+  if(t<S(5)){
+    ev('scene',3,t,'whoosh');
+    const lt=t-S(4);
+    const cons=[.26,.34,.48,.7];
+    const r=reps(lt,{n:4,ecc:.24,con:i=>cons[i],start:.12,grind:i=>i>=3?1:0});
+    ev('c3',r.done,t,'tick');
+    const left=6-r.done;
+    const st= r.ph==='con' ? [0.1,0.35,0.7,1][r.i] : r.ph==='done'? 0.4 : [0,0.2,0.45,0.75][Math.min(r.i,3)];
+    svg+=lifter({...MAIN,h:r.h,t,strain:st,mood:st>0.4?'strain':'normal',plateR:66,plateLabel:'60'});
+    if(r.ph!=='done'){ svg+=`<text x="395" y="58" text-anchor="middle" font-size="34" fill="#8a8f98" letter-spacing="4">REPS LEFT</text>`; svg+=pills(395,160,6,left,left<=2?'#c6ff3d':'#ffffff'); }
+    if(r.ph==='done'){ ev('ok',1,t,'pop'); const p=back((lt-(0.12+.24*4+cons.reduce((a,b)=>a+b)))/.35);
+      svg+=`<g transform="translate(395 150) scale(${p})"><rect x="-210" y="-50" width="420" height="100" rx="50" fill="#c6ff3d"/><text x="0" y="6" text-anchor="middle" dominant-baseline="middle" font-size="50" fill="#0d0f13">STOP HERE ✓</text></g>`;}
+    return svg;
+  }
+  // Scene 4: stop at 12 when you could do 20 → warm-up (beats 5-6)
+  if(t<S(7)){
+    ev('scene',4,t,'whoosh');
+    const lt=t-S(5);
+    const r=reps(lt,{n:12,ecc:.11,con:.11,start:.1});
+    ev('c4',r.done,t,'tick');
+    const easy = r.ph==='done';
+    svg+=lifter({...MAIN,h:r.h,t,strain:0,mood:t>=S(6)?'cool':easy?'happy':'normal',plateR:52,plateColor:'#7dd3fc',plateLabel:''});
+    const sl=t-S(6)-0.35;
+    if(!(t>=S(6) && sl>=0)) svg+=counter(395,200,'REPS  ·  COULD DO 20',r.done,'#fff',140);
+    if(t>=S(6)){ ev('stamp',sl>=0?1:0,t,'thud'); svg+=stamp(sl,'WARM-UP',395,140,'#ff4d4d',78); }
+    return svg;
+  }
+  // Scene 5: it's not the number (beat 7)
+  if(t<S(8)){
+    ev('scene',5,t,'whoosh');
+    const lt=t-S(7), spin=lt<0.7;
+    const val = spin ? [6,30,10,25,15,8,20,12,18,6,22][Math.floor(lt*14)%11] : '#';
+    svg+=`<text x="395" y="440" text-anchor="middle" dominant-baseline="middle" font-size="300" fill="${spin?'#fff':'#3a3f4b'}">${val}</text>`;
+    if(!spin){ const sp=ease((lt-0.7)/.25); ev('x5',1,t,'swish');
+      svg+=`<line x1="230" y1="530" x2="${230+330*sp}" y2="${530-200*sp}" stroke="#ff4d4d" stroke-width="30" stroke-linecap="round"/>`;}
+    return svg;
+  }
+  // Scene 6: it's the last 2 reps (beat 8)
+  if(t<S(9)){
+    ev('scene',6,t,'heart');
+    const lt=t-S(8);
+    const r=reps(lt,{n:1,ecc:.35,con:1.55,grind:()=>1});
+    const st=r.ph==='con'?1:0.7;
+    svg+=lifter({...MAIN,h:r.h,t,strain:st,mood:'strain',plateR:66,plateLabel:'60'});
+    svg+=`<text x="395" y="58" text-anchor="middle" font-size="38" fill="#ff4d4d" letter-spacing="4">THE LAST 2</text>`;
+    svg+=dots(134,160,10,8,8,t);
+    return svg;
+  }
+  // Scene 7: pick the range you like: 6, 10, 15, 20 (beats 9-10)
+  if(t<S(11)){
+    ev('scene',7,t,'whoosh');
+    const opts=[[6,'#e8483f',84,'100',.9],[10,'#f59e0b',72,'80',.7],[15,'#22c55e',58,'60',.5],[20,'#7dd3fc',44,'40',.36]];
+    const per=T[10].dur/4; let k=-1;
+    for(let j=0;j<4;j++) if(t>=S(10)+j*per*0.9) k=j;
+    ev('k7',k,t,k>=0?'pop':null);
+    const cur=opts[Math.max(k,0)];
+    const r=reps(t-S(9),{n:40,ecc:cur[4]*0.5,con:cur[4]*0.5});
+    svg+=lifter({...MAIN,y:270,h:r.h,t,strain:0.15,mood:'happy',plateR:k<0?60:cur[2],plateColor:k<0?'#8a8f98':cur[1],plateLabel:k<0?'':cur[3]});
+    for(let j=0;j<4;j++){
+      const appear=back((t-S(9)-j*0.12)/.35);
+      const on=j===k, b= on? clamp(1-(t-(S(10)+j*per*0.9))/0.3) : 0;
+      svg+=`<g opacity="${clamp((t-S(9)-j*0.12)/.15)}" transform="translate(${142+j*168} 110) scale(${appear})">${chip(0,0,opts[j][0],on||j<k,b)}</g>`;
+    }
+    return svg;
+  }
+  // Scene 8: loop — you don't need 8-12 (beat 11)
+  if(t<S(12)){
+    ev('scene',8,t,'whoosh');
+    const lt=t-S(11);
+    const r=reps(lt,{n:3,ecc:.55,con:.45,start:.2,gap:.1});
+    ev('c8',r.done,t,'tick');
+    svg+=lifter({...MAIN,h:r.h,t,mood:'normal',plateR:66,plateLabel:'60'});
+    svg+=strike812(lt, 395, 160, 140);
+    return svg;
+  }
+  // Scene 9: last 2 reps need to be tough → success (beat 12)
+  ev('scene',9,t,'whoosh');
+  const lt=t-S(12);
+  const r=reps(lt,{n:2,ecc:.3,con:i=>i?1.0:.7,grind:()=>1});
+  ev('c9',r.done,t,'tick');
+  const done=r.ph==='done';
+  const st=done?0:(r.ph==='con'?(r.i?1:0.85):0.7);
+  svg+=lifter({...MAIN,h:r.h,t,strain:st,mood:done?'happy':'strain',plateR:66,plateLabel:'60'});
+  svg+=dots(134,58,10,8+r.done,done?null:8+r.done,t);
+  if(done){ const dt=lt-(.3*2+.7+1.0); ev('win',1,t,'ding');
+    svg+=confetti(dt);
+    const p=back(dt/.4);
+    svg+=`<g transform="translate(395 165) scale(${p})"><text x="0" y="0" text-anchor="middle" dominant-baseline="middle" font-size="92" fill="#c6ff3d">TOUGH 🔥</text></g>`;}
+  return svg;
+}
+
+function caption(t){
+  let i=0; for(let k=0;k<T.length;k++) if(t>=T[k].start-0.05) i=k;
+  const b=T[i], lt=t-b.start, per=(b.dur*0.85)/b.n;
+  return b.s.split(/\s+/).map((w,k)=>{
+    const p=back((lt-k*per)/.25), o=clamp((lt-k*per)/.1);
+    const cls=b.r.includes(w)?'hr':b.h.includes(w)?'hl':'';
+    return `<span class="w ${cls}" style="opacity:${o};transform:translateY(${(1-p)*30}px) scale(${0.85+0.15*p})">${w}</span>`;
+  }).join(' ');
+}
+
+const DEFS=`<defs><radialGradient id="vig" cx="50%" cy="50%" r="60%"><stop offset="55%" stop-color="#ff4d4d" stop-opacity="0"/><stop offset="100%" stop-color="#ff4d4d" stop-opacity=".55"/></radialGradient></defs>`;
+let __lg=false;
+window.render=function(t){
+  if(!__lg){ const a=document.getElementById('lg1'), b=document.getElementById('lg2'); const w=a.getComputedTextLength()-9; b.setAttribute('textLength', w); __lg=true; }
+  document.getElementById('stage').innerHTML = DEFS + scene(t);
+  document.getElementById('caption').innerHTML = caption(t);
+  document.getElementById('pbar').style.width=(clamp(t/TOTAL)*100)+'%';
+  const inRed = t>=S(8) && t<S(9), fadeIn=clamp((t-S(8))/0.15), fadeOut=clamp((S(9)-t)/0.15);
+  document.getElementById('redvig').style.opacity = inRed ? (0.75+0.25*Math.sin((t-S(8))*7))*Math.min(fadeIn,fadeOut) : 0;
+  const g=.5+.5*Math.sin(t*.8);
+  document.getElementById('bg').style.background=`radial-gradient(900px 800px at ${30+20*g}% ${32+8*g}%, rgba(198,255,61,.10), transparent 70%)`;
+};
+</script>
+</body>
+</html>
